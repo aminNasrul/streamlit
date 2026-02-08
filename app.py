@@ -1,3 +1,4 @@
+# app.py (FULL) - CSV-only + Cooler UI + KPI boxed + Student selector inside "Selected Student"
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -17,22 +18,16 @@ st.set_page_config(page_title="UNILINK | Student Performance Dashboard", layout=
 # -----------------------------
 st.markdown("""
 <style>
-/* App background */
 [data-testid="stAppViewContainer"]{
   background: radial-gradient(circle at 15% 15%, rgba(99,102,241,0.10), transparent 40%),
               radial-gradient(circle at 85% 10%, rgba(16,185,129,0.10), transparent 35%),
               radial-gradient(circle at 70% 85%, rgba(236,72,153,0.08), transparent 40%),
               #0b1220;
 }
-
-/* Reduce top padding */
 .block-container { padding-top: 1.2rem; }
-
-/* Headings color */
 h1, h2, h3, h4 { color: #e5e7eb; }
 p, span, div { color: #cbd5e1; }
 
-/* Card style */
 .card {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.10);
@@ -41,7 +36,6 @@ p, span, div { color: #cbd5e1; }
   box-shadow: 0 10px 30px rgba(0,0,0,0.25);
 }
 
-/* KPI grid */
 .kpi-grid{
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -54,7 +48,6 @@ p, span, div { color: #cbd5e1; }
   .kpi-grid{ grid-template-columns: 1fr; }
 }
 
-/* KPI card */
 .kpi {
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.12);
@@ -90,14 +83,12 @@ p, span, div { color: #cbd5e1; }
   opacity: 0.85;
 }
 
-/* Section divider */
 .hr {
   height: 1px;
   background: rgba(255,255,255,0.10);
   margin: 16px 0 8px 0;
 }
 
-/* Hide Streamlit footer */
 footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -111,6 +102,7 @@ def load_data():
 
 df = load_data()
 
+# Required columns check
 required_cols = ["id_student", "final_result_binary", "avg_score"]
 missing = [c for c in required_cols if c not in df.columns]
 if missing:
@@ -121,18 +113,17 @@ if missing:
 # Header
 # -----------------------------
 st.title("UNILINK – Early Prediction of Student Performance")
-st.caption("Prototype decision-support dashboard (CSV-only). Lightweight models are trained at runtime for demo.")
+st.caption("CSV-only Streamlit prototype: trains lightweight models at runtime + shows decision-support visuals.")
 
 # -----------------------------
-# Sidebar
+# Sidebar controls (keep only speed)
 # -----------------------------
 st.sidebar.header("Controls")
-student_id = st.sidebar.selectbox("Select id_student", sorted(df["id_student"].unique()))
 sample_n = st.sidebar.slider("Sample size for plots (speed)", 500, 10000, 2000, 500)
 df_plot = df.sample(n=min(sample_n, len(df)), random_state=42).copy()
 
 # -----------------------------
-# Train lightweight models
+# Train lightweight models (no joblib)
 # -----------------------------
 @st.cache_resource
 def train_models(df_train: pd.DataFrame):
@@ -140,6 +131,8 @@ def train_models(df_train: pd.DataFrame):
     y_reg = df_train["avg_score"]
     X = df_train.drop(columns=["final_result_binary", "avg_score"], errors="ignore")
 
+    # NOTE: StandardScaler requires numeric features.
+    # If your CSV still has text columns (e.g., code_module), encode them in ipynb before export.
     clf = Pipeline([
         ("scaler", StandardScaler()),
         ("model", LogisticRegression(max_iter=1000))
@@ -155,16 +148,8 @@ def train_models(df_train: pd.DataFrame):
 
 clf_model, reg_model, feature_cols = train_models(df)
 
-# Student row + predictions
-row = df[df["id_student"] == student_id].iloc[0]
-X_row = pd.DataFrame([row[feature_cols]])
-
-pred_class = int(clf_model.predict(X_row)[0])
-pred_proba = float(clf_model.predict_proba(X_row)[0][1])
-pred_score = float(reg_model.predict(X_row)[0])
-
 # -----------------------------
-# KPI Summary (boxed)
+# KPI Summary (boxed) - dataset level
 # -----------------------------
 total_students = len(df)
 pass_count = int((df["final_result_binary"] == 1).sum())
@@ -198,11 +183,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# Layout: charts in cards
+# Row: Summary chart + Selected student (with selector inside)
 # -----------------------------
-c1, c2 = st.columns([1, 1])
+left, right = st.columns([1, 1])
 
-with c1:
+with left:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Overall Outcome Summary (Actual)")
 
@@ -212,31 +197,45 @@ with c1:
     plt.title("Pass vs Fail Distribution")
     st.pyplot(plt.gcf())
     plt.close()
-
     st.markdown('</div>', unsafe_allow_html=True)
 
-with c2:
+with right:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("Selected Student – Prediction (Demo)")
+    st.subheader("Selected Student")
 
-    # prediction “cards”
+    # Student selector INSIDE the card
+    student_id = st.selectbox(
+        "Choose Student ID",
+        sorted(df["id_student"].unique()),
+        key="student_selector_main"
+    )
+
+    # Student row + predictions (defined AFTER selector)
+    row = df[df["id_student"] == student_id].iloc[0]
+    X_row = pd.DataFrame([row[feature_cols]])
+
+    pred_class = int(clf_model.predict(X_row)[0])
+    pred_proba = float(clf_model.predict_proba(X_row)[0][1])
+    pred_score = float(reg_model.predict(X_row)[0])
+
     pred_out = "PASS" if pred_class == 1 else "FAIL"
+
     st.markdown(f"""
-    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-top:10px;">
       <div class="kpi">
         <div class="kpi-label">Predicted Outcome</div>
         <div class="kpi-value">{pred_out}</div>
-        <div class="kpi-sub">Classifier (runtime)</div>
+        <div class="kpi-sub">Classification</div>
       </div>
       <div class="kpi">
         <div class="kpi-label">Pass Probability</div>
         <div class="kpi-value">{pred_proba:.3f}</div>
-        <div class="kpi-sub">Higher = safer</div>
+        <div class="kpi-sub">Model confidence</div>
       </div>
       <div class="kpi">
-        <div class="kpi-label">Predicted avg_score</div>
+        <div class="kpi-label">Predicted Avg Score</div>
         <div class="kpi-value">{pred_score:.2f}</div>
-        <div class="kpi-sub">Regression (runtime)</div>
+        <div class="kpi-sub">Regression output</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -246,7 +245,7 @@ with c2:
 st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
 
 # -----------------------------
-# Student Snapshot + Key Signals
+# Student Snapshot + Notes (uses 'row' from selected student)
 # -----------------------------
 cA, cB = st.columns([1.15, 0.85])
 
@@ -271,9 +270,9 @@ with cA:
 with cB:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("Notes")
-    st.write("- Dashboard is for decision support, not automatic decisions.")
-    st.write("- Models are lightweight and trained at runtime for demo.")
-    st.write("- Use the scatter/heatmap to explain key drivers.")
+    st.write("- Dashboard supports intervention decisions, not automatic decisions.")
+    st.write("- Models are lightweight (runtime training) for deployment simplicity.")
+    st.write("- Use charts to explain drivers (engagement, early score, etc.).")
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
@@ -373,11 +372,11 @@ try:
 
     mn = float(np.nanmin([np.nanmin(actual), np.nanmin(pred_batch)]))
     mx = float(np.nanmax([np.nanmax(actual), np.nanmax(pred_batch)]))
-    plt.plot([mn, mx], [mn, mx])  # reference line (default color)
+    plt.plot([mn, mx], [mn, mx])
     st.pyplot(plt.gcf())
     plt.close()
 except Exception:
-    st.info("Could not compute regression check. Ensure features exist and are numeric.")
+    st.info("Could not compute regression check. Ensure your features are numeric and exist in the CSV.")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -410,7 +409,9 @@ else:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Debug (optional)
+# -----------------------------
+# Debug expander (optional)
+# -----------------------------
 with st.expander("Debug: Features Used"):
     st.write("Total features used:", len(feature_cols))
     st.write("First 25 features:", feature_cols[:25])
