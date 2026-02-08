@@ -144,7 +144,6 @@ if missing:
 # Header
 # -----------------------------
 st.title("UNILINK – Early Prediction of Student Performance")
-st.caption("CSV-only Streamlit prototype: trains lightweight models at runtime + shows decision-support visuals.")
 
 # -----------------------------
 # Sidebar controls (speed + evaluation)
